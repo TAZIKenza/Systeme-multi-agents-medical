@@ -17,58 +17,61 @@ workflow d'orientation clinique preliminaire. Il permet de :
 
 
 ## 2. Architecture Generale
+
+```
 medical_multiagent/
 ├── backend/
 │   ├── app/
-│   │   ├── state.py              # Etat partage LangGraph (MedicalState)
-│   │   ├── graph.py              # Construction du graphe multi-agents
+│   │   ├── state.py
+│   │   ├── graph.py
 │   │   ├── nodes/
-│   │   │   ├── supervisor.py     # Agent orchestrateur
-│   │   │   ├── diagnostic_agent.py  # Agent diagnostique
-│   │   │   ├── physician_review.py  # Noeud Human-in-the-Loop
-│   │   │   └── report_agent.py   # Agent generateur de rapport
+│   │   │   ├── supervisor.py
+│   │   │   ├── diagnostic_agent.py
+│   │   │   ├── physician_review.py
+│   │   │   └── report_agent.py
 │   │   ├── tools/
-│   │   │   ├── patient_tools.py  # Tool : questions diagnostiques
-│   │   │   ├── care_tools.py     # Tool : recommandations intermediaires
-│   │   │   └── mcp_client.py     # Client MCP
-│   │   └── api.py                # API FastAPI
+│   │   │   ├── patient_tools.py
+│   │   │   ├── care_tools.py
+│   │   │   └── mcp_client.py
+│   │   └── api.py
 │   ├── main.py
 │   ├── langgraph.json
 │   └── requirements.txt
 ├── mcp_server/
-│   └── server.py                 # Serveur MCP avec outils medicaux
+│   └── server.py
 ├── frontend/
-│   └── app.py                    # Interface Streamlit
+│   └── app.py
 └── README.md
+```
 
 
 ## 3. Workflow LangGraph
+
+```
 START
-|
-v
+  |
+  v
 Supervisor
-|
-v
+  |
+  v
 DiagnosticAgent  →  Tool: ask_patient_question (x5)
-→  Tool: recommend_interim_care
-|
-v
+                 →  Tool: recommend_interim_care
+  |
+  v
 Supervisor
-|
-v
+  |
+  v
 PhysicianReview  ←  INTERRUPTION Human-in-the-Loop
-|
-v
+  |
+  v
 Supervisor
-|
-v
+  |
+  v
 ReportAgent
-|
-v
-Supervisor
-|
-v
+  |
+  v
 END
+```
 
 ### Description des agents
 
