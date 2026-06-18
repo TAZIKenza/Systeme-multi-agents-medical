@@ -1,52 +1,42 @@
-```markdown
-# Système Multi-Agents Médical — Orientation Clinique Préliminaire
+# Système Multi-Agents Médical – Orientation Clinique Préliminaire
 
-> **⚠ Mention Obligatoire :** Ce système ne remplace pas une consultation médicale. Il produit uniquement une orientation clinique préliminaire à but pédagogique. Tout symptôme persistant ou s'aggravant nécessite une consultation médicale urgente.
+> ⚠️ **Mention obligatoire**  
+Ce système ne remplace pas une consultation médicale. Il fournit uniquement une orientation clinique préliminaire.
 
----
 
 ## 1. Contexte et Objectifs
 
-Ce projet réalise un système multi-agents basé sur **LangGraph** simulant un workflow d'orientation clinique préliminaire. Il permet de :
-* **Recueillir** les informations patient via 5 questions successives.
-* **Produire** une synthèse clinique préliminaire par un agent LLM local (Ollama).
-* **Intégrer** une validation humaine par un médecin traitant (*Human-in-the-Loop*).
-* **Générer** un rapport final structuré.
-* **Exposer** l'ensemble via une API FastAPI et un frontend interactif Streamlit.
-* **Intégrer** des outils médicaux contextuels via le protocole MCP (Model Context Protocol).
+Ce projet réalise un système multi-agents basé sur **LangGraph**, simulant un workflow d’orientation clinique préliminaire. Il permet de :
 
----
+- 📥 Recueillir les informations patient via un questionnaire successif  
+- 🧠 Produire une synthèse clinique préliminaire via un agent LLM local (Ollama)  
+- 👨‍⚕️ Intégrer une validation humaine par un médecin (Human-in-the-Loop)  
+- 📄 Générer un rapport final structuré  
+- 🚀 Exposer le système via une API FastAPI + interface Streamlit  
+- 🔌 Intégrer des outils médicaux contextuels via MCP (Model Context Protocol)
+
 
 ## 2. Architecture Générale
 
 ```text
 medical_multiagent/
-├── backend/
-│   ├── app/
-│   │   ├── state.py           # MedicalState partagé
-│   │   ├── graph.py           # Construction du graphe LangGraph
+│── backend/
+│   │── app/
+│   │   ├── state.py
+│   │   ├── graph.py
 │   │   ├── nodes/
-│   │   │   ├── supervisor.py
-│   │   │   ├── diagnostic_agent.py
-│   │   │   ├── physician_review.py
-│   │   │   └── report_agent.py
 │   │   ├── tools/
-│   │   │   ├── patient_tools.py   # ask_patient_question
-│   │   │   ├── care_tools.py      # recommend_interim_care
-│   │   │   └── mcp_client.py      # Client MCP
-│   │   └── api.py             # Endpoints FastAPI
-│   ├── main.py
-│   ├── langgraph.json         # Config LangGraph Studio
-│   └── requirements.txt
-├── mcp_server/
-│   └── server.py              # Serveur MCP port 8001
-├── frontend/
-│   └── app.py                 # Interface Streamlit
-└── README.md
+│   │   ├── api.py
+│   │── main.py
+│   │── langgraph.json
+│   │── requirements.txt
+│
+│── mcp_server/
+│── frontend/
+│── README.md
 
 ```
 
----
 
 ## 3. Workflow LangGraph
 
