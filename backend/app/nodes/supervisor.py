@@ -1,5 +1,4 @@
 from langchain_core.messages import SystemMessage, HumanMessage
-from langchain_openai import ChatOpenAI
 from app.state import MedicalState
 import os
 

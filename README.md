@@ -1,223 +1,295 @@
-# Systeme Multi-Agents Medical — Orientation Clinique Preliminaire
+```markdown
+# Système Multi-Agents Médical — Orientation Clinique Préliminaire
 
-**Projet academique — Master Informatique**  
-**Encadrant : Pr. Mohamed YOUSSFI**  
-**Technologies : LangGraph, LangChain, FastAPI, Streamlit, Ollama**
+> **⚠ Mention Obligatoire :** Ce système ne remplace pas une consultation médicale. Il produit uniquement une orientation clinique préliminaire à but pédagogique. Tout symptôme persistant ou s'aggravant nécessite une consultation médicale urgente.
 
+---
 
 ## 1. Contexte et Objectifs
 
-Ce projet realise un systeme multi-agents base sur LangGraph simulant un
-workflow d'orientation clinique preliminaire. Il permet de :
+Ce projet réalise un système multi-agents basé sur **LangGraph** simulant un workflow d'orientation clinique préliminaire. Il permet de :
+* **Recueillir** les informations patient via 5 questions successives.
+* **Produire** une synthèse clinique préliminaire par un agent LLM local (Ollama).
+* **Intégrer** une validation humaine par un médecin traitant (*Human-in-the-Loop*).
+* **Générer** un rapport final structuré.
+* **Exposer** l'ensemble via une API FastAPI et un frontend interactif Streamlit.
+* **Intégrer** des outils médicaux contextuels via le protocole MCP (Model Context Protocol).
 
-- Recueillir les informations patient via 5 questions successives
-- Produire une synthese clinique preliminaire par un agent LLM
-- Integrer une validation humaine par un medecin traitant (Human-in-the-Loop)
-- Generer un rapport final structure
+---
 
+## 2. Architecture Générale
 
-## 2. Architecture Generale
-
-```
+```text
 medical_multiagent/
 ├── backend/
 │   ├── app/
-│   │   ├── state.py
-│   │   ├── graph.py
+│   │   ├── state.py           # MedicalState partagé
+│   │   ├── graph.py           # Construction du graphe LangGraph
 │   │   ├── nodes/
 │   │   │   ├── supervisor.py
 │   │   │   ├── diagnostic_agent.py
 │   │   │   ├── physician_review.py
 │   │   │   └── report_agent.py
 │   │   ├── tools/
-│   │   │   ├── patient_tools.py
-│   │   │   ├── care_tools.py
-│   │   │   └── mcp_client.py
-│   │   └── api.py
+│   │   │   ├── patient_tools.py   # ask_patient_question
+│   │   │   ├── care_tools.py      # recommend_interim_care
+│   │   │   └── mcp_client.py      # Client MCP
+│   │   └── api.py             # Endpoints FastAPI
 │   ├── main.py
-│   ├── langgraph.json
+│   ├── langgraph.json         # Config LangGraph Studio
 │   └── requirements.txt
 ├── mcp_server/
-│   └── server.py
+│   └── server.py              # Serveur MCP port 8001
 ├── frontend/
-│   └── app.py
+│   └── app.py                 # Interface Streamlit
 └── README.md
+
 ```
 
+---
 
 ## 3. Workflow LangGraph
 
-```
-START
-  |
-  v
-Supervisor
-  |
-  v
-DiagnosticAgent  →  Tool: ask_patient_question (x5)
-                 →  Tool: recommend_interim_care
-  |
-  v
-Supervisor
-  |
-  v
-PhysicianReview  ←  INTERRUPTION Human-in-the-Loop
-  |
-  v
-Supervisor
-  |
-  v
-ReportAgent
-  |
-  v
-END
+### 3.1 Graphe des transitions
+
+Le graphe est défini dans `graph.py` et compilé avec `interrupt_before=["physician_review"]` pour implémenter le mécanisme *Human-in-the-Loop* :
+
+```text
+START ➔ Supervisor ➔ DiagnosticAgent ➔ Supervisor ➔ [INTERRUPT] PhysicianReview ➔ Supervisor ➔ ReportAgent ➔ END
+
 ```
 
-### Description des agents
+### 3.2 Description des nœuds
 
-**Supervisor** : orchestre le workflow. Decide de la prochaine etape selon
-l'etat courant du graphe (question_count, diagnostic_summary, physician_treatment).
+| Nœud                | Rôle              | Détails                                                                                  |
+|---------------------|-------------------|------------------------------------------------------------------------------------------|
+| **Supervisor**      | Orchestrateur     | Décide du prochain nœud selon l'état courant (`question_count`, `diagnostic_summary` `physician_treatment`).                                                                                                              |
+| **DiagnosticAgent** | Agent diagnostic  | Pose 5 questions via `ask_patient_question`. Génère la synthèse clinique avec ChatOllama (`llama3.2`) et appelle `recommend_interim_care`.                                                                                    |
+| **PhysicianReview** | Human-in-the-Loop | Interruption du graphe. Attend la saisie manuelle du médecin via l'API ou LangGraph Studio avant de continuer.                                                                                                                  |
+| **ReportAgent**     | Rédaction rapport | Génère le rapport final structuré en 6 sections intégrant toutes les données collectées. |
 
-**DiagnosticAgent** : pose 5 questions successives au patient via le tool
-`ask_patient_question`. Une fois les 5 reponses collectees, il invoque le LLM
-pour produire une synthese clinique preliminaire et appelle `recommend_interim_care`.
+### 3.3 État partagé — `MedicalState`
 
-**PhysicianReview** : noeud Human-in-the-Loop. Le graphe s'interrompt ici
-et attend la saisie manuelle du medecin traitant via l'API ou le frontend.
-
-**ReportAgent** : genere le rapport final structure en integrant toutes les
-informations collectees : cas patient, reponses, synthese, recommandations
-et avis du medecin.
-
-
-## 4. Etat Partage (MedicalState)
+L'état est défini dans `state.py` et partagé entre tous les nœuds :
 
 ```python
 class MedicalState(TypedDict, total=False):
-    messages: Annotated[list, add_messages]
-    next: Literal["diagnostic_agent", "physician_review", "report_agent", "FINISH"]
-    question_count: int
-    patient_answers: list
-    interim_care: str
-    diagnostic_summary: str
-    physician_treatment: str
-    final_report: str
-    patient_case: str
-    thread_id: str
+    messages: Annotated[list, add_messages]   # Historique des messages
+    next: Literal[...]                        # Prochain nœud
+    question_count: int                       # Nb questions posées (0-5)
+    patient_answers: list                     # Réponses du patient
+    interim_care: str                         # Recommandations intermédiaires
+    diagnostic_summary: str                   # Synthèse clinique LLM
+    physician_treatment: str                  # Avis du médecin traitant
+    final_report: str                         # Rapport final
+    patient_case: str                         # Cas patient initial
+
 ```
 
+### 3.4 Compilation du graphe
 
-## 5. Intégration MCP
+Le graphe est compilé sans checkpointer personnalisé — LangGraph Studio gère la persistance automatiquement :
 
-Le serveur MCP expose deux outils medicaux accessibles par les agents :
+```python
+graph = builder.compile(interrupt_before=["physician_review"])
 
-| Outil                 | Description                                       |
-|-----------------------|---------------------------------------------------|
-| `get_medical_context` | Enrichit le contexte clinique selon les symptomes |
-| `check_red_flags`     | Identifie les signaux d'alerte medicaux           |
+```
 
-Le serveur tourne independamment sur `http://localhost:8001`.
+### 3.5 Configuration LangGraph Studio — `langgraph.json`
 
+```json
+{
+  "dependencies": ["."],
+  "graphs": {
+    "medical_graph": "./app/graph.py:medical_graph"
+  },
+  "env": ".env"
+}
 
-## 6. API FastAPI
+```
 
-| Methode | Endpoint                          | Description                        |
-|---------|-----------------------------------|------------------------------------|
-| POST    | `/sessions/start`                 | Creer une session                  |
-| POST    | `/consultation/start`             | Demarrer avec le cas patient       |
-| POST    | `/consultation/resume`            | Envoyer reponse patient ou medecin |
-| GET     | `/consultation/{thread_id}`       | Etat courant                       |
-| GET     | `/consultation/{thread_id}/poll`  | Polling generation LLM             |
-| GET     | `/consultation/{thread_id}/report`| Rapport final                      |
+---
 
-Documentation interactive : `http://localhost:8000/docs`
+## 4. Intégration MCP (Model Context Protocol)
 
+Le serveur MCP tourne indépendamment sur le port `8001` et expose deux outils médicaux contextuels appelés par le client via HTTP :
 
-## 7. Frontend Streamlit
+| Endpoint                          | Outil                 | Description                            |
+|-----------------------------------|-----------------------|----------------------------------------|
+| `POST /tools/get_medical_context` | `get_medical_context` | Retourne un contexte clinique enrichi selon les symptômes (respiratoire, digestif, général).                                                                                  |
+| `POST /tools/check_red_flags`     | `check_red_flags`     | Détecte les signaux d'alerte médicaux (`URGENT` / `ATTENTION`) dans la description.                                                                                         |
+| `GET /tools`                      | `list_tools`          | Liste tous les outils MCP disponibles. |
+| `GET /health`                     | `health`              | Vérification de l'état du serveur MCP. |
 
-4 ecrans principaux :
+---
 
-- **Ecran 1** : Saisie du cas patient initial
-- **Ecran 2** : Questions / Reponses successives (5 questions)
-- **Ecran 3** : Revue du medecin traitant avec synthese clinique
-- **Ecran 4** : Rapport final structure
+## 5. API FastAPI
 
+Le backend FastAPI tourne sur le port `8000`. La documentation interactive Swagger est accessible sur : `http://localhost:8000/docs`.
 
-## 8. Technologies Utilisees
+### Endpoints disponibles
 
-| Technologie        | Role                                         |
-|--------------------|----------------------------------------------|
-| LangGraph          | Orchestration multi-agents avec etat partage |
-| LangChain          | Abstraction LLM et tools                     |
-| Ollama + LLaMA 3.2 | Modele LLM local (sans cle API)              |
-| FastAPI            | Exposition de l'API REST                     |
-| Streamlit          | Interface utilisateur                        |
-| MCP                | Protocole d'integration des outils           |
-| MemorySaver        | Persistance de l'etat entre les appels       |
+| Méthode| Endpoint                           | Description                                                                             |
+|--------|------------------------------------|-----------------------------------------------------------------------------------------|
+| `POST` | `/sessions/start`                  | Crée une nouvelle session (génère un `thread_id` UUID).                                 |
+| `POST` | `/consultation/start`              | Démarre la consultation avec le cas patient initial.                                    |
+| `POST` | `/consultation/resume`             | Envoie la réponse patient (`patient_answer`) ou l'avis médecin (`physician_treatment`). |
+| `GET`  | `/consultation/{thread_id}`        | Retourne l'état courant de la consultation.                                             |
+| `GET`  | `/consultation/{thread_id}/poll`   | Polling — vérifie si la génération LLM est terminée.                                    |
+| `GET`  | `/consultation/{thread_id}/report` | Retourne le rapport final une fois généré.                                              |
+| `GET`  | `/health`                          | Vérification de l'état du backend.                                                      |
 
+### Flux séquentiel complet
 
-## 9. Installation et Lancement
+1. `POST /sessions/start` ➔ Obtenir le `thread_id`
+2. `POST /consultation/start {thread_id, patient_case}` ➔ Récupérer la première question
+3. `POST /consultation/resume {thread_id, patient_answer}` **(× 5)** ➔ Questions/Réponses successives
+4. `GET /consultation/{thread_id}/poll` ➔ Attendre la fin de la génération de la synthèse LLM
+5. `POST /consultation/resume {thread_id, physician_treatment}` ➔ Soumettre l'avis du médecin
+6. `GET /consultation/{thread_id}/poll` ➔ Attendre la génération du rapport final
+7. `GET /consultation/{thread_id}/report` ➔ Récupérer le rapport final complet
 
-### Prerequis
-- Python 3.11+
-- Ollama installe : https://ollama.com
-- Modele telecharge : `ollama pull llama3.2`
+---
 
-### Installation
+## 6. Frontend Streamlit
+
+L'interface tourne sur le port `8501` et se décompose en 4 écrans :
+
+* **Écran 1 — Cas patient :** Saisie du motif de consultation initial.
+* **Écran 2 — Q/R patient :** Affichage des 5 questions successives et saisie des réponses.
+* **Écran 3 — Revue médecin :** Affichage de la synthèse clinique et saisie de l'avis médecin (HITL).
+* **Écran 4 — Rapport final :** Affichage du rapport clinique structuré complet.
+
+---
+
+## 7. Technologies Utilisées
+
+| Technologie            | Version     | Rôle                                                |
+|------------------------|-------------|-----------------------------------------------------|
+| **LangGraph**          | `>=1.2`     | Orchestration multi-agents, gestion de l'état, HITL |
+| **LangChain**          | `>=1.3`     | Abstraction LLM et outils                           |
+| **langchain-ollama**   | `>=1.1`     | Intégration Ollama/LLaMA local                      |
+| **Ollama + LLaMA 3.2** | `3b/latest` | Modèle LLM local (sans clé API, nécessite ~8GB RAM) |
+| **FastAPI**            | `>=0.111`   | Exposition de l'API REST                            |
+| **Streamlit**          | `latest`    | Interface utilisateur web                           |
+| **MCP (FastAPI)**      | `1.0`       | Serveur d'outils médicaux contextuels               |
+| **Python**             | `3.12`      | Langage de programmation backend                    |
+
+---
+
+## 8. Installation et Lancement
+
+### 8.1 Prérequis
+
+* Python `3.11+`
+* **Ollama** installé ([Télécharger ici](https://ollama.com))
+* Modèle local téléchargé : `ollama pull llama3.2`
+
+### 8.2 Installation des dépendances
+
+Ouvrez vos terminaux et exécutez les commandes suivantes selon les dossiers :
 
 ```bash
-# Backend
+# 1. Dans le dossier Backend
 cd backend
 pip install -r requirements.txt
 
-# MCP Server
+# 2. Dans le dossier MCP Server
 cd ../mcp_server
 pip install fastapi uvicorn httpx
 
-# Frontend
+# 3. Dans le dossier Frontend
 cd ../frontend
-pip install -r requirements.txt
+pip install streamlit requests
+
 ```
 
-### Configuration
+### 8.3 Configuration de l'environnement
 
-Creer `backend/.env` :
+Créez un fichier `.env` dans le dossier `backend/` :
+
+```env
 OLLAMA_MODEL=llama3.2:latest
 OLLAMA_BASE_URL=http://localhost:11434
 
-### Lancement (3 terminaux)
-
-```bash
-# Terminal 1
-cd mcp_server && python server.py
-
-# Terminal 2
-cd backend && python main.py
-
-# Terminal 3
-cd frontend && streamlit run app.py
 ```
 
-Ouvrir : `http://localhost:8501`
+### 8.4 Lancement du projet complet (3 Terminaux)
+
+| Terminal       | Commande                                              | URL d'accès             |
+|----------------|-------------------------------------------------------|-------------------------|
+| **Terminal 1** | `cd mcp_server && python server.py`                   | `http://localhost:8001` |
+| **Terminal 2** | `cd backend && uvicorn main:app --reload --port 8000` | `http://localhost:8000` |
+| **Terminal 3** | `cd frontend && streamlit run app.py`                 | `http://localhost:8501` |
+
+*Note : Assurez-vous qu'Ollama tourne bien en arrière-plan avec la commande `ollama serve`.*
+
+### 8.5 Lancement de la Démo sur LangGraph Studio
+
+```bash
+cd backend
+langgraph dev
+
+```
+
+Ouvrir ensuite l'interface via l'URL : [LangGraph Studio](https://smith.langchain.com/studio/?baseUrl=http://127.0.0.1:2024)
+
+---
+
+## 9. Tests et Validation (LangGraph Studio)
+
+### 9.1 Input Initial du Graphe
+
+Dans le panneau **Input** de LangGraph Studio, injecter la structure suivante :
+
+```json
+{
+  "patient_case": "<description du cas>",
+  "question_count": 0,
+  "patient_answers": [],
+  "messages": [],
+  "next": "diagnostic_agent"
+}
+
+```
+
+### 9.2 Gestion de l'interruption HITL
+
+Le graphe s'arrête automatiquement sur le nœud `physician_review`. Dans le panneau **State** :
+
+1. Cliquez sur **Edit**.
+2. Ajoutez votre avis médical :
+```json
+{
+  "physician_treatment": "<traitement proposé>"
+}
+
+```
 
 
-## 10. Jeux de Tests
+3. Cliquez sur **Continue** pour relancer le workflow et générer le rapport.
 
-### Cas 1 - Syndrome respiratoire simple
-- **Cas** : Patient de 32 ans avec toux seche depuis 5 jours et fievre moderee
-- **Resultat attendu** : Orientation vers infection respiratoire virale
+### 9.3 Jeux de tests types
 
-### Cas 2 - Red flags
-- **Cas** : Patient de 55 ans avec douleur thoracique intense irradiant bras gauche
-- **Resultat attendu** : Signaux d'alerte detectes, consultation urgente recommandee
+| Cas | `patient_case` (Input) | Résultat attendu | `physician_treatment` (Exemple) |
+| --- | --- | --- | --- |
+| **1 — Respiratoire** | "Patient 32 ans, toux sèche depuis 5 jours, fièvre modérée 38°C" | Orientation infection respiratoire virale | "Paracétamol 1g/8h, repos 3 jours" |
+| **2 — Red flags** | "Patient 55 ans, douleur thoracique intense irradiant bras gauche, essoufflement" | Signaux d'alerte, orientation consultation urgente | "Orientation urgences cardiologiques, ECG immédiat" |
+| **3 — Bénin** | "Patient 22 ans, légers maux de tête depuis ce matin, pas de fièvre" | Recommandations simples, pas de red flags | "Paracétamol si besoin, hydratation, repos" |
 
-### Cas 3 - Cas benin
-- **Cas** : Patient de 22 ans avec maux de tete depuis ce matin
-- **Resultat attendu** : Recommandations simples, pas de red flags
+### 9.4 Éléments clés pour la validation (Évaluation)
 
+Lors de la présentation, les points suivants doivent être visibles dans LangGraph Studio :
 
-## 11. Mention Obligatoire
+* Les transitions dynamiques entre les nœuds gérées par le `Supervisor`.
+* L'interruption automatique (*Human-in-the-Loop*) au niveau du nœud `physician_review`.
+* La mise à jour en temps réel des états intermédiaires (`diagnostic_summary`, `interim_care`, etc.).
+* La reprise fluide du graphe après l'injection des données du médecin pour aboutir au rapport final.
 
-**Ce systeme ne remplace pas une consultation medicale.**  
-Il produit uniquement une orientation clinique preliminaire a but pedagogique.  
-Tout symptome persistant necessite une consultation medicale urgente.
+---
+
+**Projet académique — Master Informatique** | Encadrant : **Pr. Mohamed YOUSSFI**
+
+```
+
+```
