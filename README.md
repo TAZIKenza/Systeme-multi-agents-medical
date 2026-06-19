@@ -20,20 +20,29 @@ Ce projet réalise un système multi-agents basé sur **LangGraph**, simulant un
 
 ```text
 medical_multiagent/
-│── backend/
-│   │── app/
-│   │   ├── state.py
-│   │   ├── graph.py
+├── backend/
+│   ├── app/
+│   │   ├── state.py           # MedicalState partagé
+│   │   ├── graph.py           # Construction du graphe LangGraph
 │   │   ├── nodes/
+│   │   │   ├── supervisor.py
+│   │   │   ├── diagnostic_agent.py
+│   │   │   ├── physician_review.py
+│   │   │   └── report_agent.py
 │   │   ├── tools/
-│   │   ├── api.py
-│   │── main.py
-│   │── langgraph.json
-│   │── requirements.txt
-│
-│── mcp_server/
-│── frontend/
-│── README.md
+│   │   │   ├── patient_tools.py   # ask_patient_question
+│   │   │   ├── care_tools.py      # recommend_interim_care
+│   │   │   └── mcp_client.py      # Client MCP
+│   │   └── api.py             # Endpoints FastAPI
+│   ├── main.py
+│   ├── langgraph.json         # Config LangGraph Studio
+│   └── requirements.txt
+├── mcp_server/
+│   └── server.py              # Serveur MCP port 8001
+├── frontend/
+│   └── app.py                 # Interface Streamlit
+└── README.md
+
 
 ```
 
